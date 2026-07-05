@@ -2490,6 +2490,9 @@ const app = document.getElementById("app");
 
 /* Seed defaults on first run only — CFG doc is created once and never overwritten. */
 const ROOM_SET_LABEL = "Room Set"; // reserved — see guards in renameProduct/removeProduct
+// Room Set components are bedroom-only by definition (bed + wardrobe + bedside + dressing table, etc).
+// Hardcoded rather than tag-driven — if you rename one of these categories in Settings, re-add it here too.
+const ROOM_SET_COMPONENT_PRODUCTS = ["Bed","Bunk Bed","Wardrobe","Bedside Table","Dressing Table","Chest of Drawers","Mattress"];
 const DEFAULT_PRODUCTS = [
   "Sofa","Sofa Cum Bed","Recliner","Bed","Bunk Bed","Wardrobe","Dressing Table",
   "Bedside Table","Chest of Drawers","Dining Table","Dining Chair","Center Table",
@@ -2808,8 +2811,8 @@ function addRangeRow(data){
   list.appendChild(div);
 }
 function componentProductOptions(){
-  // Room Set can't contain another Room Set — that's a nesting problem for another day.
-  return CONFIG.products.filter(p=>p!==ROOM_SET_LABEL);
+  // Bedroom items only — a Room Set doesn't get a sofa or a dining table.
+  return CONFIG.products.filter(p=>ROOM_SET_COMPONENT_PRODUCTS.includes(p));
 }
 function addComponentRow(data){
   const list = document.getElementById("componentList");
