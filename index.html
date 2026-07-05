@@ -19,7 +19,7 @@
 
   header.top{display:flex;align-items:center;gap:14px;padding:18px 0 22px;justify-content:space-between}
   header.top .l{display:flex;align-items:center;gap:14px}
-  header.top img{height:46px;width:auto}
+  header.top img{height:54px;width:auto}
   header.top .t{font-size:13px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
   .gearbtn{border:1px solid var(--line);background:#fff;border-radius:10px;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;color:var(--ink)}
   .gearbtn:hover{border-color:var(--red);color:var(--red)}
@@ -109,7 +109,7 @@
 
   .viewer{max-width:560px;margin:0 auto;padding:26px 18px 60px}
   .vlogo{text-align:center;margin-bottom:22px}
-  .vlogo img{height:56px;width:auto}
+  .vlogo img{height:64px;width:auto}
   .vhead{text-align:center;margin-bottom:22px}
   .vbrand{font-size:12.5px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--red)}
   .vfile{font-size:26px;font-weight:700;margin-top:4px;color:var(--charcoal)}
@@ -2491,11 +2491,12 @@ const app = document.getElementById("app");
 /* Seed defaults on first run only — CFG doc is created once and never overwritten. */
 const ROOM_SET_LABEL = "Room Set"; // reserved — see guards in renameProduct/removeProduct
 // Room Set components are bedroom-only by definition (bed + wardrobe + bedside + dressing table, etc).
-// Hardcoded rather than tag-driven — if you rename one of these categories in Settings, re-add it here too.
-const ROOM_SET_COMPONENT_PRODUCTS = ["Bed","Bunk Bed","Wardrobe","Bedside Table","Dressing Table","Chest of Drawers","Mattress"];
+// No mattress in room sets. Hardcoded rather than tag-driven — if you rename one of these
+// categories in Settings, re-add it here too.
+const ROOM_SET_COMPONENT_PRODUCTS = ["Bed","Bunk Bed","2 Door Wardrobe","3 Door Wardrobe","Bedside Table","Dressing Table","Chest of Drawers"];
 const DEFAULT_PRODUCTS = [
-  "Sofa","Sofa Cum Bed","Recliner","Bed","Bunk Bed","Wardrobe","Dressing Table",
-  "Bedside Table","Chest of Drawers","Dining Table","Dining Chair","Center Table",
+  "Sofa","Sofa Cum Bed","Recliner","Bed","Bunk Bed","2 Door Wardrobe","3 Door Wardrobe",
+  "Dressing Table","Bedside Table","Chest of Drawers","Dining Table","Dining Chair","Center Table",
   "Console Table","TV Unit","Bookshelf / Wall Unit","Office Chair","Study Table",
   "Shoe Rack","Bar Cabinet","Mattress","Ottoman / Pouffe","Kids Furniture",
   "Outdoor Furniture", ROOM_SET_LABEL
@@ -3332,7 +3333,7 @@ async function buildCardCanvas(item){
 
   let y = BAR + 56;
   if(logo){
-    const {w:lw,h:lh} = fitBoxSize(logo.naturalWidth, logo.naturalHeight, 720, 130);
+    const {w:lw,h:lh} = fitBoxSize(logo.naturalWidth, logo.naturalHeight, 828, 150);
     c.drawImage(logo, (W-lw)/2, y, lw, lh);
     y += lh + 44;
   } else {
