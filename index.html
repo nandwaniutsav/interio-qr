@@ -2559,7 +2559,26 @@ let editingId = null;   // null = new
 
 async function renderAdmin(){
   document.title = "Nandwani Interio — QR Admin";
-  await ensureConfigSeeded();
+
+  // Paint something before touching Firestore — a failed/slow network call
+  // must never leave the page blank with no explanation.
+  app.innerHTML = `<div class="wrap"><div class="empty">Connecting…</div></div>`;
+  try{
+    await ensureConfigSeeded();
+  }catch(e){
+    console.error("Config load failed:", e);
+    app.innerHTML = `
+      <div class="wrap">
+        <div class="empty" style="text-align:left;max-width:640px;margin:60px auto">
+          <b style="display:block;color:var(--charcoal);font-size:16px;margin-bottom:10px">Couldn't connect to the database.</b>
+          <div style="margin-bottom:10px">${esc(e.message||String(e))}</div>
+          <div style="font-size:13px">This is almost always Firestore security rules not covering the
+          <code>interio_items</code> / <code>interio_config</code> collections yet. Check Firebase Console →
+          Firestore Database → Rules, then reload this page.</div>
+        </div>
+      </div>`;
+    return;
+  }
 
   app.innerHTML = `
     <div class="wrap">
@@ -2652,6 +2671,9 @@ function subscribeConfig(){
     populateBrandSelect();
     populateProductSelect();
     if(document.getElementById("cfgBody")) renderCfgTab(currentCfgTab);
+  }, err=>{
+    console.error("Config sync failed:", err);
+    flash("Lost connection to product/brand settings: "+err.message);
   });
 }
 function populateBrandSelect(){
