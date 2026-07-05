@@ -42,6 +42,8 @@
   .rangehdr span{font-size:12px;color:var(--muted);letter-spacing:.04em;text-transform:uppercase}
   .rrow{display:grid;grid-template-columns:1.3fr 1fr 34px;gap:8px;margin-bottom:8px;align-items:center}
   .rrow input{padding:9px 10px;font-size:14px}
+  .crow{display:grid;grid-template-columns:1fr 1fr 1fr 34px;gap:8px;margin-bottom:8px;align-items:center}
+  .crow input,.crow select{padding:9px 10px;font-size:14px}
   .rmv{border:none;background:#f1f1f2;color:#b02;border-radius:8px;height:38px;cursor:pointer;font-size:18px;line-height:1}
   .rmv:hover{background:#fbe3e5}
   .btn{border:none;border-radius:9px;padding:11px 18px;font-size:14px;font-weight:600;cursor:pointer;letter-spacing:.02em}
@@ -2487,12 +2489,13 @@ const LOGO = "nandwani_interio.png";
 const app = document.getElementById("app");
 
 /* Seed defaults on first run only — CFG doc is created once and never overwritten. */
+const ROOM_SET_LABEL = "Room Set"; // reserved — see guards in renameProduct/removeProduct
 const DEFAULT_PRODUCTS = [
   "Sofa","Sofa Cum Bed","Recliner","Bed","Bunk Bed","Wardrobe","Dressing Table",
-  "Chest of Drawers","Dining Table","Dining Chair","Center Table","Console Table",
-  "TV Unit","Bookshelf / Wall Unit","Office Chair","Study Table","Shoe Rack",
-  "Bar Cabinet","Mattress","Ottoman / Pouffe","Kids Furniture","Outdoor Furniture",
-  "Room Set" // placeholder — behaviour for this to be defined later
+  "Bedside Table","Chest of Drawers","Dining Table","Dining Chair","Center Table",
+  "Console Table","TV Unit","Bookshelf / Wall Unit","Office Chair","Study Table",
+  "Shoe Rack","Bar Cabinet","Mattress","Ottoman / Pouffe","Kids Furniture",
+  "Outdoor Furniture", ROOM_SET_LABEL
 ];
 const DEFAULT_BRANDS = [
   {name:"Damro", products:[]},
@@ -2526,23 +2529,53 @@ async function renderViewer(id){
   catch(e){ return viewerError("Couldn’t load. Check your connection and try again."); }
   if(!doc.exists) return viewerError("This code isn’t linked to an item anymore.");
   const f = doc.data();
-  const rows = (f.variants||[]).map(r=>`
-    <tr>
-      <td>${esc(r.size)}</td>
-      <td class="rate">${fmtMRP(r.mrp)}</td>
-    </tr>`).join("");
+  const subParts = [f.product, f.productName].filter(Boolean);
+  const isRoomSet = f.itemType === "roomset";
+
+  let bodyHtml;
+  if(isRoomSet){
+    const comps = f.components||[];
+    const total = comps.reduce((s,c)=>s+(parseFloat(c.price)||0),0);
+    const pct = parseFloat(f.discountPct)||0;
+    const discAmt = total*pct/100;
+    const net = total - discAmt;
+    const rows = comps.map(c=>`
+      <tr>
+        <td>${esc(c.product)}${c.name?` <span style="color:var(--muted)">— ${esc(c.name)}</span>`:""}</td>
+        <td class="rate">${fmtMRP(c.price)}</td>
+      </tr>`).join("");
+    bodyHtml = `
+      <table class="rates">
+        <thead><tr><th>Item</th><th>Price</th></tr></thead>
+        <tbody>
+          ${rows||`<tr><td colspan="2" style="text-align:center;color:var(--muted)">No items added.</td></tr>`}
+          <tr><td style="font-weight:600">Total</td><td class="rate">${fmtMRP(total)}</td></tr>
+          <tr><td style="font-weight:600">Discount (${esc(String(pct))}%)</td><td class="rate">− ${fmtMRP(discAmt)}</td></tr>
+          <tr style="background:#fafafa"><td style="font-weight:700;color:var(--red)">Net Price</td><td class="rate" style="color:var(--red)">${fmtMRP(net)}</td></tr>
+        </tbody>
+      </table>`;
+  } else {
+    const rows = (f.variants||[]).map(r=>`
+      <tr>
+        <td>${esc(r.size)}</td>
+        <td class="rate">${fmtMRP(r.mrp)}</td>
+      </tr>`).join("");
+    bodyHtml = `
+      <table class="rates">
+        <thead><tr><th>Size</th><th>MRP</th></tr></thead>
+        <tbody>${rows||`<tr><td colspan="2" style="text-align:center;color:var(--muted)">No sizes added.</td></tr>`}</tbody>
+      </table>`;
+  }
+
   app.innerHTML = `
     <div class="viewer">
       <div class="vlogo"><img src="${LOGO}" alt="Nandwani Interio" onerror="this.style.display='none'"></div>
       <div class="vhead">
         <div class="vbrand">${esc(f.brand||"")}</div>
         <div class="vfile">${esc(f.modelNumber||"")}</div>
-        <div class="vsub">${esc(f.product||"")}</div>
+        <div class="vsub">${esc(subParts.join(" · "))}</div>
       </div>
-      <table class="rates">
-        <thead><tr><th>Size</th><th>MRP</th></tr></thead>
-        <tbody>${rows||`<tr><td colspan="2" style="text-align:center;color:var(--muted)">No sizes added.</td></tr>`}</tbody>
-      </table>
+      ${bodyHtml}
       <div class="vfoot">Nandwani Interio</div>
     </div>`;
   document.title = `${f.brand||""} ${f.modelNumber||""} — Nandwani Interio`.trim();
@@ -2603,12 +2636,32 @@ async function renderAdmin(){
             <input id="in-model" placeholder="e.g. DM-2201" autocomplete="off">
           </div>
         </div>
+        <div class="row">
+          <div class="field" style="flex:2"><label>Product Name (optional)</label>
+            <input id="in-productname" list="productNames" placeholder="e.g. Sovana — helps tell similar models apart" autocomplete="off">
+            <datalist id="productNames"></datalist>
+          </div>
+        </div>
         <div class="hintline" id="brandHint"></div>
 
-        <div class="ranges">
+        <div class="ranges" id="standardBlock">
           <div class="rangehdr"><span>Sizes &amp; MRP (at least one required)</span></div>
           <div id="rangeList"></div>
           <button class="addrange" id="addRange">+ Add size</button>
+        </div>
+
+        <div class="ranges" id="roomSetBlock" style="display:none">
+          <div class="rangehdr"><span>Room Set Components (at least one required)</span></div>
+          <div id="componentList"></div>
+          <button class="addrange" id="addComponent">+ Add component</button>
+          <div class="row" style="margin-top:14px">
+            <div class="field"><label>Discount %</label>
+              <input id="in-discpct" placeholder="e.g. 10" inputmode="decimal">
+            </div>
+            <div class="field"><label>Total / Discount / Net</label>
+              <div id="roomSetPreview" style="padding:11px 0;font-size:14px;color:var(--charcoal);font-weight:600">—</div>
+            </div>
+          </div>
         </div>
 
         <div class="formfoot" style="margin-top:14px">
@@ -2704,16 +2757,39 @@ function populateProductSelect(){
   hint.textContent = brandName && (!brand || !brand.products || !brand.products.length)
     ? "This brand's product list isn't configured yet — showing all products. Set it up in ⚙ Products & Brands."
     : "";
+  toggleItemModeBlocks();
+  renderProductNameDatalist();
+}
+function toggleItemModeBlocks(){
+  const isRoomSet = document.getElementById("in-product").value === ROOM_SET_LABEL;
+  document.getElementById("standardBlock").style.display = isRoomSet ? "none" : "";
+  document.getElementById("roomSetBlock").style.display = isRoomSet ? "" : "none";
+  if(isRoomSet && document.getElementById("componentList").children.length===0) addComponentRow();
+}
+function renderProductNameDatalist(){
+  const brand = document.getElementById("in-brand").value;
+  const product = document.getElementById("in-product").value;
+  const names = [...new Set(
+    ITEMS_CACHE.filter(f=>f.productName && (!brand||f.brand===brand) && (!product||f.product===product)).map(f=>f.productName)
+  )].sort();
+  const dl = document.getElementById("productNames");
+  if(dl) dl.innerHTML = names.map(n=>`<option value="${esc(n)}">`).join("");
 }
 
 /* ---- form wiring ---- */
 function wireForm(){
   document.getElementById("addRange").onclick = ()=>addRangeRow();
+  document.getElementById("addComponent").onclick = ()=>addComponentRow();
   document.getElementById("saveBtn").onclick = saveItem;
   document.getElementById("cancelBtn").onclick = resetForm;
+  document.getElementById("in-discpct").addEventListener("input", updateRoomSetPreview);
   document.getElementById("in-brand").addEventListener("change", ()=>{
     document.getElementById("in-product").value = "";
     populateProductSelect();
+  });
+  document.getElementById("in-product").addEventListener("change", ()=>{
+    toggleItemModeBlocks();
+    renderProductNameDatalist();
   });
 }
 function addRangeRow(data){
@@ -2731,26 +2807,92 @@ function addRangeRow(data){
   };
   list.appendChild(div);
 }
+function componentProductOptions(){
+  // Room Set can't contain another Room Set — that's a nesting problem for another day.
+  return CONFIG.products.filter(p=>p!==ROOM_SET_LABEL);
+}
+function addComponentRow(data){
+  const list = document.getElementById("componentList");
+  const div = document.createElement("div");
+  div.className = "crow";
+  const opts = componentProductOptions();
+  div.innerHTML = `
+    <select class="c-product">
+      <option value="">Select…</option>
+      ${opts.map(p=>`<option value="${esc(p)}" ${data&&data.product===p?"selected":""}>${esc(p)}</option>`).join("")}
+    </select>
+    <input placeholder="Name (optional)" class="c-name"  value="${data?esc(data.name):""}">
+    <input placeholder="Price ₹ *"       class="c-price" value="${data?esc(data.price):""}" inputmode="decimal">
+    <button class="rmv" title="Remove">×</button>`;
+  div.querySelector(".rmv").onclick = ()=>{
+    const rows = list.querySelectorAll(".crow");
+    if(rows.length>1){ div.remove(); updateRoomSetPreview(); }
+    else flash("Keep at least one component.");
+  };
+  div.querySelector(".c-price").addEventListener("input", updateRoomSetPreview);
+  list.appendChild(div);
+  updateRoomSetPreview();
+}
+function updateRoomSetPreview(){
+  const el = document.getElementById("roomSetPreview"); if(!el) return;
+  const prices = [...document.querySelectorAll("#componentList .crow")].map(r=>parseFloat(r.querySelector(".c-price").value)||0);
+  const total = prices.reduce((a,b)=>a+b,0);
+  const pct = parseFloat(document.getElementById("in-discpct").value)||0;
+  const disc = total*pct/100;
+  const net = total-disc;
+  el.textContent = `${fmtMRP(total)}  −  ${fmtMRP(disc)}  =  ${fmtMRP(net)} net`;
+}
 function readForm(){
   const brand = document.getElementById("in-brand").value.trim();
   const product = document.getElementById("in-product").value.trim();
   const modelNumber = document.getElementById("in-model").value.trim();
+  const productName = document.getElementById("in-productname").value.trim();
+  const isRoomSet = product === ROOM_SET_LABEL;
+  if(isRoomSet){
+    const components = [...document.querySelectorAll("#componentList .crow")].map(r=>({
+      product: r.querySelector(".c-product").value.trim(),
+      name:    r.querySelector(".c-name").value.trim(),
+      price:   r.querySelector(".c-price").value.trim()
+    })).filter(c=>c.product||c.name||c.price);
+    const discountPct = document.getElementById("in-discpct").value.trim();
+    return {brand,product,modelNumber,productName,isRoomSet,components,discountPct};
+  }
   const variants = [...document.querySelectorAll("#rangeList .rrow")].map(r=>({
     size: r.querySelector(".r-size").value.trim(),
     mrp:  r.querySelector(".r-mrp").value.trim()
   })).filter(r=>r.size||r.mrp);
-  return {brand,product,modelNumber,variants};
+  return {brand,product,modelNumber,productName,isRoomSet,variants};
 }
 async function saveItem(){
-  const {brand,product,modelNumber,variants} = readForm();
-  if(!brand)       return flash("Brand is required.");
-  if(!product)     return flash("Product is required.");
-  if(!modelNumber) return flash("Model number is required.");
-  if(variants.length===0) return flash("Add at least one size.");
-  const bad = variants.find(r=>!r.size || !r.mrp);
-  if(bad) return flash("Each row needs both a size and an MRP.");
+  const f = readForm();
+  if(!f.brand)       return flash("Brand is required.");
+  if(!f.product)     return flash("Product is required.");
+  if(!f.modelNumber) return flash("Model number is required.");
 
-  const payload = {brand,product,modelNumber,variants,updatedAt:firebase.firestore.FieldValue.serverTimestamp()};
+  let payload;
+  if(f.isRoomSet){
+    if(f.components.length===0) return flash("Add at least one component.");
+    const bad = f.components.find(c=>!c.product || !c.price);
+    if(bad) return flash("Each component needs a product and a price.");
+    payload = {
+      brand:f.brand, product:f.product, modelNumber:f.modelNumber, productName:f.productName,
+      itemType:"roomset", components:f.components, discountPct:f.discountPct||"0",
+      variants: firebase.firestore.FieldValue.delete(),
+      updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+    };
+  } else {
+    if(f.variants.length===0) return flash("Add at least one size.");
+    const bad = f.variants.find(r=>!r.size || !r.mrp);
+    if(bad) return flash("Each row needs both a size and an MRP.");
+    payload = {
+      brand:f.brand, product:f.product, modelNumber:f.modelNumber, productName:f.productName,
+      itemType:"standard", variants:f.variants,
+      components: firebase.firestore.FieldValue.delete(),
+      discountPct: firebase.firestore.FieldValue.delete(),
+      updatedAt:firebase.firestore.FieldValue.serverTimestamp()
+    };
+  }
+
   try{
     if(editingId){
       await ITEMS.doc(editingId).update(payload);
@@ -2770,9 +2912,23 @@ function editItem(id){
   document.getElementById("in-brand").value = f.brand||"";
   populateProductSelect();
   document.getElementById("in-product").value = f.product||"";
+  document.getElementById("in-productname").value = f.productName||"";
   document.getElementById("in-model").value = f.modelNumber||"";
+  toggleItemModeBlocks();
+  renderProductNameDatalist();
+
   document.getElementById("rangeList").innerHTML = "";
   (f.variants&&f.variants.length?f.variants:[{}]).forEach(r=>addRangeRow(r));
+
+  document.getElementById("componentList").innerHTML = "";
+  if(f.itemType==="roomset"){
+    (f.components&&f.components.length?f.components:[{}]).forEach(c=>addComponentRow(c));
+    document.getElementById("in-discpct").value = f.discountPct||"";
+    updateRoomSetPreview();
+  } else {
+    document.getElementById("in-discpct").value = "";
+  }
+
   document.getElementById("cancelBtn").style.display = "inline-block";
   document.getElementById("saveBtn").textContent = "Update Item";
   window.scrollTo({top:0,behavior:"smooth"});
@@ -2782,9 +2938,13 @@ function resetForm(){
   document.getElementById("formTitle").textContent = "Add Item";
   document.getElementById("in-brand").value = "";
   populateProductSelect();
+  document.getElementById("in-productname").value = "";
   document.getElementById("in-model").value = "";
   document.getElementById("rangeList").innerHTML = "";
   addRangeRow();
+  document.getElementById("componentList").innerHTML = "";
+  document.getElementById("in-discpct").value = "";
+  toggleItemModeBlocks();
   document.getElementById("cancelBtn").style.display = "none";
   document.getElementById("saveBtn").textContent = "Save Item";
 }
@@ -2819,13 +2979,23 @@ function renderList(){
   el.innerHTML = Object.keys(byBrand).sort().map(brand=>{
     const items = byBrand[brand]
       .sort((a,b)=>(a.modelNumber||"").localeCompare(b.modelNumber||""))
-      .map(f=>`
+      .map(f=>{
+        let meta;
+        if(f.itemType==="roomset"){
+          const comps = f.components||[];
+          const total = comps.reduce((s,c)=>s+(parseFloat(c.price)||0),0);
+          const net = total - total*(parseFloat(f.discountPct)||0)/100;
+          meta = `Room Set · ${comps.length} item${comps.length===1?"":"s"} · net ${fmtMRP(net)}`;
+        } else {
+          meta = `${esc(f.product||"")} · ${(f.variants||[]).length} size${(f.variants||[]).length===1?"":"s"}`;
+        }
+        return `
         <div class="fcard">
           <label style="display:flex;align-items:center;gap:12px;cursor:pointer;flex:1;min-width:0">
             <input type="checkbox" style="width:18px;height:18px;flex-shrink:0" ${SELECTED.has(f.id)?"checked":""} onchange="toggleSelect('${f.id}', this.checked)">
             <div style="min-width:0">
-              <div class="fn">${esc(f.modelNumber)}</div>
-              <div class="fmeta">${esc(f.product||"")} · ${(f.variants||[]).length} size${(f.variants||[]).length===1?"":"s"}</div>
+              <div class="fn">${esc(f.modelNumber)}${f.productName?` <span style="color:var(--muted);font-weight:400">— ${esc(f.productName)}</span>`:""}</div>
+              <div class="fmeta">${meta}</div>
             </div>
           </label>
           <div class="acts">
@@ -2833,7 +3003,7 @@ function renderList(){
             <button class="btn ghost tiny" onclick="editItem('${f.id}')">Edit</button>
             <button class="btn ghost tiny" onclick="deleteItem('${f.id}')">Delete</button>
           </div>
-        </div>`).join("");
+        </div>`;}).join("");
     return `<div class="brandgroup"><div class="brandname">${esc(brand)}</div>${items}</div>`;
   }).join("");
 }
@@ -2882,14 +3052,17 @@ function renderCfgTab(tab){
 }
 function renderProductList(){
   const el = document.getElementById("productList"); if(!el) return;
-  el.innerHTML = CONFIG.products.map(p=>`
+  el.innerHTML = CONFIG.products.map(p=>{
+    const reserved = p===ROOM_SET_LABEL;
+    return `
     <div class="cfgitem">
-      <span class="nm">${esc(p)}</span>
+      <span class="nm">${esc(p)}${reserved?` <span style="color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.03em">reserved</span>`:""}</span>
       <span class="acts">
-        <button class="btn ghost tiny" onclick="renameProduct('${escJs(p)}')">Rename</button>
-        <button class="btn ghost tiny" onclick="removeProduct('${escJs(p)}')">Remove</button>
+        ${reserved ? "" : `
+          <button class="btn ghost tiny" onclick="renameProduct('${escJs(p)}')">Rename</button>
+          <button class="btn ghost tiny" onclick="removeProduct('${escJs(p)}')">Remove</button>`}
       </span>
-    </div>`).join("") || `<div class="empty">No products yet.</div>`;
+    </div>`;}).join("") || `<div class="empty">No products yet.</div>`;
 }
 async function addProduct(){
   const inp = document.getElementById("newProduct");
@@ -2900,12 +3073,14 @@ async function addProduct(){
   inp.value = "";
 }
 async function renameProduct(oldName){
+  if(oldName===ROOM_SET_LABEL) return flashCfg(`"${ROOM_SET_LABEL}" is a reserved category the app keys off of — it can't be renamed. Add a new category if you want a different label alongside it.`);
   const next = prompt("Rename product:", oldName);
   if(!next || !next.trim() || next.trim()===oldName) return;
   const list = CONFIG.products.map(p=>p===oldName?next.trim():p);
   await CFG.update({products:list});
 }
 async function removeProduct(name){
+  if(name===ROOM_SET_LABEL) return flashCfg(`"${ROOM_SET_LABEL}" is reserved and can't be removed while the app supports room sets.`);
   if(!confirm(`Remove "${name}" from the product list?\nItems already saved with this product are unaffected.`)) return;
   await CFG.update({products: firebase.firestore.FieldValue.arrayRemove(name)});
   // also strip it from any brand's product list
