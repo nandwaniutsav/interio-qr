@@ -95,10 +95,21 @@
   .cfgrow{display:flex;gap:8px;align-items:center;margin-bottom:8px}
   .cfgrow input{flex:1}
   .cfglist{max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:6px}
+  .cfglist-flow{border:1px solid var(--line);border-radius:10px;padding:6px}
   .cfgitem{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-radius:8px}
   .cfgitem:hover{background:#fafafa}
   .cfgitem .nm{font-size:14px}
   .cfgitem .acts button{margin-left:6px}
+  .brandcard{border:1px solid var(--line);border-radius:10px;margin-bottom:8px;overflow:hidden}
+  .brandcard:last-child{margin-bottom:0}
+  .brandcard-head{display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer}
+  .brandcard-head:hover{background:#fafafa}
+  .brandcard-head .nm{font-size:14px;font-weight:600;flex-shrink:0}
+  .brandcard-head .badge{font-size:11.5px;color:var(--muted);flex:1;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .brandcard-head .acts{display:flex;align-items:center;gap:6px;flex-shrink:0}
+  .brandcard-head .chev{font-size:10px;color:var(--muted);width:14px;text-align:center;flex-shrink:0}
+  .brandcard-body{padding:12px 14px 14px;border-top:1px solid var(--line);background:#fafafa}
+  .bulkrow{display:flex;gap:8px;margin-bottom:10px}
   .addnew{display:flex;gap:8px;margin:12px 0}
   .addnew input{flex:1}
   .brandprods{margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
@@ -2881,9 +2892,11 @@ async function saveItem(){
     payload = {
       brand:f.brand, product:f.product, modelNumber:f.modelNumber, productName:f.productName,
       itemType:"roomset", components:f.components, discountPct:f.discountPct||"0",
-      variants: firebase.firestore.FieldValue.delete(),
       updatedAt:firebase.firestore.FieldValue.serverTimestamp()
     };
+    // Clearing stale fields from a previous type only makes sense against a doc that already
+    // exists — FieldValue.delete() is invalid inside add()'s implicit set(), so it's edit-only.
+    if(editingId) payload.variants = firebase.firestore.FieldValue.delete();
   } else {
     if(f.variants.length===0) return flash("Add at least one size.");
     const bad = f.variants.find(r=>!r.size || !r.mrp);
@@ -2891,10 +2904,12 @@ async function saveItem(){
     payload = {
       brand:f.brand, product:f.product, modelNumber:f.modelNumber, productName:f.productName,
       itemType:"standard", variants:f.variants,
-      components: firebase.firestore.FieldValue.delete(),
-      discountPct: firebase.firestore.FieldValue.delete(),
       updatedAt:firebase.firestore.FieldValue.serverTimestamp()
     };
+    if(editingId){
+      payload.components = firebase.firestore.FieldValue.delete();
+      payload.discountPct = firebase.firestore.FieldValue.delete();
+    }
   }
 
   try{
@@ -3047,8 +3062,7 @@ function renderCfgTab(tab){
         <input id="newBrand" placeholder="New brand name…">
         <button class="btn primary tiny" id="addBrandBtn">Add</button>
       </div>
-      <div class="cfglist" id="brandList"></div>
-      <div id="brandProdsBox"></div>`;
+      <div class="cfglist-flow" id="brandList"></div>`;
     document.getElementById("addBrandBtn").onclick = addBrand;
     document.getElementById("newBrand").addEventListener("keydown", e=>{ if(e.key==="Enter") addBrand(); });
     renderBrandList();
@@ -3094,20 +3108,47 @@ async function removeProduct(name){
 
 function renderBrandList(){
   const el = document.getElementById("brandList"); if(!el) return;
-  el.innerHTML = CONFIG.brands.map(b=>`
-    <div class="cfgitem">
-      <span class="nm">${esc(b.name)}</span>
-      <span class="acts">
-        <button class="btn ghost tiny" onclick="selectBrandForProducts('${escJs(b.name)}')">Products it sells</button>
-        <button class="btn ghost tiny" onclick="renameBrand('${escJs(b.name)}')">Rename</button>
-        <button class="btn ghost tiny" onclick="removeBrand('${escJs(b.name)}')">Remove</button>
-      </span>
-    </div>`).join("") || `<div class="empty">No brands yet.</div>`;
-  if(editingBrandName && CONFIG.brands.some(b=>b.name===editingBrandName)){
-    renderBrandProductsBox(editingBrandName);
-  } else {
-    document.getElementById("brandProdsBox").innerHTML = "";
-  }
+  if(CONFIG.brands.length===0){ el.innerHTML = `<div class="empty">No brands yet.</div>`; return; }
+  el.innerHTML = CONFIG.brands.map(b=>{
+    const expanded = editingBrandName===b.name;
+    const configured = b.products && b.products.length;
+    const badge = configured ? `${b.products.length}/${CONFIG.products.length} products` : "All products — not configured";
+    return `
+    <div class="brandcard">
+      <div class="brandcard-head" onclick="toggleBrandExpand('${escJs(b.name)}')">
+        <span class="nm">${esc(b.name)}</span>
+        <span class="badge">${badge}</span>
+        <span class="acts" onclick="event.stopPropagation()">
+          <button class="btn ghost tiny" onclick="renameBrand('${escJs(b.name)}')">Rename</button>
+          <button class="btn ghost tiny" onclick="removeBrand('${escJs(b.name)}')">Remove</button>
+        </span>
+        <span class="chev">${expanded?"▲":"▼"}</span>
+      </div>
+      ${expanded ? renderBrandProductsBody(b) : ""}
+    </div>`;
+  }).join("");
+}
+function renderBrandProductsBody(brand){
+  const selected = new Set(brand.products||[]);
+  return `
+    <div class="brandcard-body">
+      <div class="bulkrow">
+        <button class="btn ghost tiny" onclick="setAllBrandProducts('${escJs(brand.name)}', true)">Select all</button>
+        <button class="btn ghost tiny" onclick="setAllBrandProducts('${escJs(brand.name)}', false)">Clear (show all as fallback)</button>
+      </div>
+      <div class="chkgrid">
+        ${CONFIG.products.map(p=>`
+          <label>
+            <input type="checkbox" ${selected.has(p)?"checked":""} onchange="toggleBrandProduct('${escJs(brand.name)}','${escJs(p)}', this.checked)">
+            ${esc(p)}
+          </label>`).join("")}
+      </div>
+      <div class="hint">Leave everything unchecked (or hit Clear) and the item form falls back to showing all products for this brand.</div>
+    </div>`;
+}
+function toggleBrandExpand(name){
+  editingBrandName = (editingBrandName===name) ? null : name;
+  renderBrandList();
 }
 async function addBrand(){
   const inp = document.getElementById("newBrand");
@@ -3116,6 +3157,7 @@ async function addBrand(){
   if(CONFIG.brands.some(b=>b.name===val)) return flashCfg("Already in the list.");
   await CFG.update({brands: firebase.firestore.FieldValue.arrayUnion({name:val, products:[]})});
   inp.value = "";
+  editingBrandName = val; // jump straight into configuring products — no hunting for it in the list
 }
 async function renameBrand(oldName){
   const next = prompt("Rename brand:", oldName);
@@ -3130,26 +3172,9 @@ async function removeBrand(name){
   await CFG.update({brands});
   if(editingBrandName===name) editingBrandName = null;
 }
-function selectBrandForProducts(name){
-  editingBrandName = name;
-  renderBrandProductsBox(name);
-}
-function renderBrandProductsBox(brandName){
-  const brand = CONFIG.brands.find(b=>b.name===brandName);
-  const box = document.getElementById("brandProdsBox"); if(!box || !brand) return;
-  const selected = new Set(brand.products||[]);
-  box.innerHTML = `
-    <div class="brandprods">
-      <div class="lbl">What does ${esc(brandName)} sell?</div>
-      <div class="chkgrid">
-        ${CONFIG.products.map(p=>`
-          <label>
-            <input type="checkbox" ${selected.has(p)?"checked":""} onchange="toggleBrandProduct('${escJs(brandName)}','${escJs(p)}', this.checked)">
-            ${esc(p)}
-          </label>`).join("")}
-      </div>
-      <div class="hint">Leave everything unchecked and the item form will show all products for this brand as a fallback.</div>
-    </div>`;
+async function setAllBrandProducts(brandName, all){
+  const brands = CONFIG.brands.map(b=> b.name===brandName ? {...b, products: all ? [...CONFIG.products] : []} : b);
+  await CFG.update({brands});
 }
 async function toggleBrandProduct(brandName, product, on){
   const brands = CONFIG.brands.map(b=>{
